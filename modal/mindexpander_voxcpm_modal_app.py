@@ -124,6 +124,8 @@ def api():
         voice = body.get("voice", "default")
         response_format = body.get("response_format", "wav")
         speed = body.get("speed", 1.0)
+        cfg_value = body.get("cfg_value", 2.0)
+        inference_timesteps = body.get("inference_timesteps", 10)
 
         if not text:
             raise HTTPException(status_code=400, detail="input is required")
@@ -135,6 +137,8 @@ def api():
             voice=voice,
             response_format=response_format,
             speed=speed,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
         )
 
         media_type = {
@@ -177,7 +181,7 @@ def api():
 
 @app.cls(
     image=gpu_image,
-    gpu="A10G",
+    gpu="A100-40GB",
     timeout=600,
     scaledown_window=120,
     min_containers=0,
@@ -267,6 +271,8 @@ class VoxCPMRunner:
         voice: str = "default",
         response_format: str = "wav",
         speed: float = 1.0,
+        cfg_value: float = 2.0,
+        inference_timesteps: int = 10,
     ) -> dict:
         """Generate speech from text."""
         import numpy as np
@@ -277,8 +283,8 @@ class VoxCPMRunner:
         # Generate audio
         audio_np = self.model.generate(
             text=text,
-            cfg_value=2.0,
-            inference_timesteps=10,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
             normalize=False,
             denoise=False,
         )
@@ -328,7 +334,7 @@ class VoxCPMRunner:
 
 @app.function(
     image=gpu_image,
-    gpu="A10G",
+    gpu="A100-40GB",
     timeout=600,
     scaledown_window=120,
     min_containers=0,
