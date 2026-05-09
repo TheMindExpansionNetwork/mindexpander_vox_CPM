@@ -181,7 +181,7 @@ def api():
 
 @app.cls(
     image=gpu_image,
-    gpu="A100-40GB",
+    gpu="RTX-PRO-6000",
     timeout=600,
     scaledown_window=120,
     min_containers=0,
@@ -339,7 +339,7 @@ class VoxCPMRunner:
 
 @app.function(
     image=gpu_image,
-    gpu="A100-40GB",
+    gpu="RTX-PRO-6000",
     timeout=600,
     scaledown_window=120,
     min_containers=0,
@@ -363,7 +363,7 @@ def generate_audio(
 
 @app.function(
     image=gpu_image,
-    gpu="A100-40GB",
+    gpu="RTX-PRO-6000",
     timeout=600,
     volumes={
         f"/cache/{LORA_VOLUME}": modal.Volume.from_name(LORA_VOLUME, create_if_missing=True),
