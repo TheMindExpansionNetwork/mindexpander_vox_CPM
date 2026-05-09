@@ -198,6 +198,13 @@ class VoxCPMRunner:
     @modal.enter()
     def load_model(self):
         """Load model once when container starts."""
+        import os as _os
+        # MUST set HF cache dirs before any HF imports resolve
+        _os.environ["HF_HOME"] = "/cache/hf"
+        _os.environ["TRANSFORMERS_CACHE"] = "/cache/hf"
+        _os.environ["HF_HUB_CACHE"] = "/cache/hf/hub"
+        _os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+
         import torch
         from voxcpm.core import VoxCPM
         from voxcpm.model.voxcpm2 import LoRAConfig
@@ -248,8 +255,6 @@ class VoxCPMRunner:
                     lora_path = str(alt.parent)
                     lora_cfg = LoRAConfig(enable_lm=True, enable_dit=True, enable_proj=False, r=32, alpha=16)
                     break
-
-        os.environ["HF_HOME"] = f"/cache/hf"
 
         self.model = VoxCPM.from_pretrained(
             hf_model_id=HF_MODEL_ID,
@@ -356,12 +361,61 @@ def generate_audio(
     return runner.generate(text=text, voice=voice, response_format=response_format, speed=speed)
 
 
+@app.function(
+    image=gpu_image,
+    gpu="A100-40GB",
+    timeout=600,
+    volumes={
+        f"/cache/{LORA_VOLUME}": modal.Volume.from_name(LORA_VOLUME, create_if_missing=True),
+        f"/cache/hf": modal.Volume.from_name(HF_CACHE_VOLUME, create_if_missing=True),
+    },
+)
+def cache_model():
+    """Pre-download VoxCPM2 model to HF cache volume. Run once after deploy."""
+    import os
+    os.environ["HF_HOME"] = "/cache/hf"
+    os.environ["TRANSFORMERS_CACHE"] = "/cache/hf"
+    os.environ["HF_HUB_CACHE"] = "/cache/hf/hub"
+    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+
+    from pathlib import Path
+    from huggingface_hub import snapshot_download
+
+    print(f"[cache_model] Downloading {HF_MODEL_ID} to /cache/hf/hub...")
+    path = snapshot_download(
+        repo_id=HF_MODEL_ID,
+        cache_dir="/cache/hf/hub",
+        ignore_patterns=["*.md", "*.txt"],
+    )
+    print(f"[cache_model] Downloaded to: {path}")
+
+    # Verify key files
+    p = Path(path)
+    for f in ["model.safetensors", "audiovae.pth", "config.json"]:
+        fp = p / f
+        if fp.exists():
+            print(f"  ✅ {f}: {fp.stat().st_size / 1024 / 1024:.1f}MB")
+        else:
+            print(f"  ❌ {f}: MISSING")
+
+    # Commit volume so it persists
+    vol = modal.Volume.from_name(HF_CACHE_VOLUME)
+    vol.commit()
+    print(f"[cache_model] Volume committed. Cold starts will now use cached model!")
+
+
 @app.local_entrypoint()
 def main(
     text: str = "Is this real, or did the stars just blink? Did the room start breathing when I stopped to think?",
     voice: str = "default",
+    cache: bool = False,
 ):
-    """Test the endpoint locally."""
+    """Test the endpoint locally. Pass --cache to pre-download model."""
+    if cache:
+        print("Pre-caching VoxCPM2 model to volume...")
+        cache_model.remote()
+        print("Done! Model cached. Future cold starts will be much faster.")
+        return
     print(f"Generating: {text}")
     result = generate_audio.remote(text=text, voice=voice)
     out_path = Path("/tmp/mindexpander_test.wav")
