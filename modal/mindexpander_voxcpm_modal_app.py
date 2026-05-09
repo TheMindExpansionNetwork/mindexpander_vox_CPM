@@ -80,10 +80,10 @@ def _read_bearer_token():
 @app.function(
     image=cpu_image,
     cpu=0.25,
-    memory=256,
-    timeout=60,
-    scaledown_window=30,
-    keep_warm=0,
+    memory=512,
+    timeout=300,
+    scaledown_window=60,
+    min_containers=0,
 )
 @modal.asgi_app(label=f"{APP_NAME}-api")
 def api():
@@ -128,8 +128,9 @@ def api():
         if not text:
             raise HTTPException(status_code=400, detail="input is required")
 
-        # Call GPU function
-        result = await generate_audio.remote.aio(
+        # Call GPU class method directly (enter() runs automatically on container start)
+        runner = VoxCPMRunner()
+        result = await runner.generate.remote.aio(
             text=text,
             voice=voice,
             response_format=response_format,
@@ -164,7 +165,8 @@ def api():
         if not text:
             raise HTTPException(status_code=400, detail="text or input required")
 
-        result = await generate_audio.remote.aio(text=text, voice=voice)
+        runner = VoxCPMRunner()
+        result = await runner.generate.remote.aio(text=text, voice=voice)
         return Response(
             content=result["audio_bytes"],
             media_type="audio/wav",
@@ -178,13 +180,13 @@ def api():
     gpu="A10G",
     timeout=600,
     scaledown_window=120,
-    keep_warm=0,
+    min_containers=0,
     volumes={
         f"/cache/{LORA_VOLUME}": modal.Volume.from_name(LORA_VOLUME, create_if_missing=True),
         f"/cache/hf": modal.Volume.from_name(HF_CACHE_VOLUME, create_if_missing=True),
         "/outputs": modal.Volume.from_name(OUTPUTS_VOLUME, create_if_missing=True),
     },
-    secrets=[modal.Secret.from_name("mindexpander-secret", required_keys=[])],
+    secrets=[],
 )
 class VoxCPMRunner:
     """GPU-backed VoxCPM2 model runner with LoRA support."""
@@ -329,7 +331,7 @@ class VoxCPMRunner:
     gpu="A10G",
     timeout=600,
     scaledown_window=120,
-    keep_warm=0,
+    min_containers=0,
     volumes={
         f"/cache/{LORA_VOLUME}": modal.Volume.from_name(LORA_VOLUME, create_if_missing=True),
         f"/cache/hf": modal.Volume.from_name(HF_CACHE_VOLUME, create_if_missing=True),
